@@ -1,11 +1,20 @@
 name: Release
 
-# Tag v1.2.3 (or run manually for an existing tag) to build fresh APKs and
-# publish them as a GitHub Release. Nothing is sent to Google Play.
+# Two ways to publish:
+#   * A commit on master: the Tests workflow must finish successfully first
+#     (workflow_run trigger), then a snapshot release v1.0.<run>-<attempt> is
+#     created from the exact commit that passed.
+#   * A v* tag (or a manual dispatch with an existing tag): a normal semver
+#     release is created/updated for that tag.
+# Nothing is sent to Google Play.
 on:
   push:
     tags:
       - 'v*'
+  workflow_run:
+    workflows: ["Tests"]
+    types: [completed]
+    branches: [master]
   workflow_dispatch:
     inputs:
       tag:
@@ -22,22 +31,48 @@ concurrency:
 
 jobs:
   version:
-    name: Resolve version from tag
+    name: Resolve release metadata
+    # A master push reaches this workflow only through Tests. If that run
+    # failed or was cancelled, skip everything quietly instead of publishing.
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
       version_name: ${{ steps.meta.outputs.version_name }}
       version_code: ${{ steps.meta.outputs.version_code }}
+      sha: ${{ steps.meta.outputs.sha }}
+      snapshot: ${{ steps.meta.outputs.snapshot }}
     steps:
-      - name: Derive versionName / versionCode
+      - name: Derive tag / version / commit
         id: meta
         shell: bash
         env:
+          EVENT_NAME: ${{ github.event_name }}
           INPUT_TAG: ${{ github.event.inputs.tag }}
           REF_NAME: ${{ github.ref_name }}
+          TESTED_SHA: ${{ github.event.workflow_run.head_sha }}
+          EVENT_SHA: ${{ github.sha }}
+          RUN_NUMBER: ${{ github.run_number }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           set -euo pipefail
-          tag="${INPUT_TAG:-$REF_NAME}"
+
+          if [[ "$EVENT_NAME" == "workflow_run" ]]; then
+            # Master commit: build the SHA that actually passed Tests, not
+            # whatever master points at by the time the build starts.
+            sha="$TESTED_SHA"
+            tag="v1.0.${RUN_NUMBER}-${RUN_ATTEMPT}"
+            snapshot=true
+          else
+            # Tag push or manual dispatch with an existing tag.
+            sha="$EVENT_SHA"
+            tag="${INPUT_TAG:-$REF_NAME}"
+            snapshot=false
+          fi
+
           version="${tag#v}"
           if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
             echo "Expected a semantic tag like v1.2.3, got '$tag'" >&2
@@ -46,16 +81,20 @@ jobs:
           IFS='.' read -r major minor patch _ <<< "$version"
           patch="${patch%%[!0-9]*}"
           code=$(( 10#$major * 10000 + 10#$minor * 100 + 10#$patch ))
+
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version_name=$version" >> "$GITHUB_OUTPUT"
           echo "version_code=$code" >> "$GITHUB_OUTPUT"
-          echo "Release $tag -> versionName=$version versionCode=$code"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "snapshot=$snapshot" >> "$GITHUB_OUTPUT"
+          echo "Release $tag -> versionName=$version versionCode=$code sha=$sha (snapshot=$snapshot)"
 
   build:
     name: Build release artifacts
     needs: version
     uses: ./.github/workflows/build-apks.yml
     with:
+      ref: ${{ needs.version.outputs.sha }}
       version_name: ${{ needs.version.outputs.version_name }}
       version_code: ${{ needs.version.outputs.version_code }}
 
@@ -66,12 +105,6 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Check out release tag
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.version.outputs.tag }}
-          fetch-depth: 0
-
       - name: Download APK artifact
         uses: actions/download-artifact@v6
         with:
@@ -91,10 +124,15 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.version.outputs.tag }}
+          # Creates the snapshot tag at the tested commit. Ignored for tags
+          # that already exist (the v* / manual release case).
+          target_commitish: ${{ needs.version.outputs.sha }}
           name: ${{ needs.version.outputs.tag }}
           generate_release_notes: true
-          prerelease: ${{ contains(needs.version.outputs.version_name, '-') }}
+          prerelease: ${{ needs.version.outputs.snapshot == 'true' }}
           body: |
+            ${{ needs.version.outputs.snapshot == 'true' && 'Automated snapshot from `master`, published only after the Tests workflow passed on this commit.' || 'Stable release built from the `v*` tag.' }}
+
             Android VPN client for Opera's private tunnel. Requires Android 12+ (API 31).
             Regions: **AM**, **EU**, **AS**.
 

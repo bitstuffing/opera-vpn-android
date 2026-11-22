@@ -411,13 +411,20 @@ no `local.properties` to configure in CI.
 | --- | --- | --- | --- |
 | [`test.yml`](.github/workflows/test.yml) | every push, PR, manual | Three independent jobs: `:app` unit tests, library tests (`:opera-vpn`, `:udp-protocol`, `:udp-relay`) and Android lint. Live Opera probes stay excluded. | `test-report-app`, `test-report-libraries`, `lint-report` (uploaded even on failure). |
 | [`build.yml`](.github/workflows/build.yml) | every push, PR, manual | Calls the reusable APK build with version 1.0 / code 1 (or the values passed to *Run workflow*). | `apks` — both APKs plus `checksums.txt`. |
-| [`build-apks.yml`](.github/workflows/build-apks.yml) | `workflow_call` only | The shared build: assembles debug + release APKs and writes SHA-256 checksums. Not run directly. | `apks`. |
-| [`release.yml`](.github/workflows/release.yml) | tag `v*` or manual (existing tag) | Resolves `v1.2.3` → versionName `1.2.3` / versionCode `10203`, calls the shared build, verifies the checksums and publishes a GitHub Release. | Release assets: `app-debug.apk`, `app-release-unsigned.apk`, `checksums.txt`. |
+| [`build-apks.yml`](.github/workflows/build-apks.yml) | `workflow_call` only | The shared build: checks out the caller's ref (or an explicit SHA), assembles debug + release APKs and writes SHA-256 checksums. Not run directly. | `apks`. |
+| [`release.yml`](.github/workflows/release.yml) | tag `v*`, manual (existing tag), or **Tests passing on `master`** | Resolves `v1.2.3` → versionName `1.2.3` / versionCode `10203`, or builds a master snapshot `v1.0.<run>-<attempt>`. Calls the shared build, verifies the checksums and publishes a GitHub Release. | Release assets: `app-debug.apk`, `app-release-unsigned.apk`, `checksums.txt`. |
 
 ```bash
 git tag v1.2.3
 git push origin v1.2.3
 ```
+
+Every commit on `master` is also released automatically, but **only after the
+`Tests` workflow for that commit completes successfully**. The snapshot tag is
+`v1.0.<run-number>-<attempt>` (for example `v1.0.42-1`), the APK version values
+come from the same numbers, and the tag is created at the exact commit that was
+tested — not at whatever `master` points to later. Failed or cancelled test runs
+publish nothing, and master snapshots are marked as prereleases.
 
 The release body is generated from the commits since the previous tag. Tags
 containing `-` (for example `v1.2.3-rc1`) are marked as prereleases. You can
