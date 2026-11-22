@@ -89,6 +89,7 @@ The user can change all of this while the VPN is running; region changes and
 | **Status** | `Disconnected`, `Connecting…`, `Connected · host:port · region` or `Error · reason`. |
 | **Traffic (this session)** | `↓ total · ↑ total` and the current `↓ speed · ↑ speed`, refreshed once a second. |
 | **DNS counters** | `DNS: N blocked / M allowed`, taken from the bounded DNS log. |
+| **Foreground notification** | Status, session download/upload totals, current download/upload speeds and the blocked-domain count, refreshed once a second while the VPN is running. |
 | **Reconnect (new IP)** | Forces a new anonymous Opera subscriber/device, which gives a new proxy endpoint and exit IP. Available while connected; otherwise it behaves like a normal connect. |
 | **DNS Filter** | Opens the ad-block manager (custom rules + link to lists). |
 | **DNS Log** | Opens the query log. |

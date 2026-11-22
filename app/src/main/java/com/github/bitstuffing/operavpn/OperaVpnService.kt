@@ -6,6 +6,8 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
 import android.net.VpnService
+import android.os.Handler
+import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.util.Log
 import com.github.bitstuffing.operavpn.dns.DnsLists
@@ -29,6 +31,16 @@ class OperaVpnService : VpnService() {
 
     /** Incremented by every teardown; stale callbacks/results are ignored. */
     private var generation = 0
+
+    @Volatile
+    private var notificationStatus = ""
+    private val notificationHandler = Handler(Looper.getMainLooper())
+    private val notificationRunnable = object : Runnable {
+        override fun run() {
+            showNotification(notificationStatus)
+            notificationHandler.postDelayed(this, NOTIFICATION_REFRESH_MS)
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -75,7 +87,9 @@ class OperaVpnService : VpnService() {
         // counter session; the UI keeps showing the last totals when stopped.
         TrafficStats.reset()
         val myGeneration = generation
-        startForeground(NOTIFICATION_ID, notification(getString(R.string.status_connecting)))
+        notificationStatus = getString(R.string.status_connecting)
+        startForeground(NOTIFICATION_ID, notification(notificationStatus))
+        startNotificationUpdates()
         VpnState.publish(VpnState.Phase.CONNECTING, getString(R.string.status_connecting))
 
         worker = Thread({
@@ -144,7 +158,7 @@ class OperaVpnService : VpnService() {
 
                 val detail = "${connection.host}:${connection.port} · $country"
                 VpnState.publish(VpnState.Phase.CONNECTED, detail)
-                updateNotification("${getString(R.string.status_connected)} · $country")
+                showNotification("${getString(R.string.status_connected)} · $country")
             } catch (e: Exception) {
                 relay?.close()
                 if (!handedOff) {
@@ -162,6 +176,7 @@ class OperaVpnService : VpnService() {
     }
 
     private fun teardown() {
+        stopNotificationUpdates()
         generation++
         worker?.interrupt()
         worker = null
@@ -179,7 +194,8 @@ class OperaVpnService : VpnService() {
             VpnState.Phase.ERROR,
             error.message ?: getString(R.string.status_error)
         )
-        updateNotification(getString(R.string.status_error))
+        stopNotificationUpdates()
+        showNotification(getString(R.string.status_error))
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
@@ -202,25 +218,57 @@ class OperaVpnService : VpnService() {
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
-    private fun notification(text: String): Notification {
+    private fun notification(status: String): Notification {
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
         val pendingIntent = PendingIntent.getActivity(
             this, 0, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
+
+        val traffic = TrafficStats.snapshot()
+        val totals = getString(
+            R.string.traffic_totals,
+            TrafficStats.formatBytes(traffic.downBytes),
+            TrafficStats.formatBytes(traffic.upBytes)
+        )
+        val speed = getString(
+            R.string.traffic_speed,
+            TrafficStats.formatRate(traffic.downBps),
+            TrafficStats.formatRate(traffic.upBps)
+        )
+        val blocked = getString(R.string.notification_blocked, DnsLog.stats().blocked)
+        val details = buildString {
+            append(status).append('\n')
+            append(totals).append('\n')
+            append(speed).append('\n')
+            append(blocked)
+        }
+
         return Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_vpn)
             .setContentTitle(getString(R.string.notification_title))
-            .setContentText(text)
+            .setContentText("$status · $totals")
+            .setStyle(Notification.BigTextStyle().bigText(details))
             .setContentIntent(pendingIntent)
             .setOngoing(true)
+            .setOnlyAlertOnce(true)
             .build()
     }
 
-    private fun updateNotification(text: String) {
+    private fun showNotification(status: String) {
+        notificationStatus = status
         getSystemService(NotificationManager::class.java)
-            .notify(NOTIFICATION_ID, notification(text))
+            .notify(NOTIFICATION_ID, notification(status))
+    }
+
+    private fun startNotificationUpdates() {
+        notificationHandler.removeCallbacks(notificationRunnable)
+        notificationHandler.postDelayed(notificationRunnable, NOTIFICATION_REFRESH_MS)
+    }
+
+    private fun stopNotificationUpdates() {
+        notificationHandler.removeCallbacks(notificationRunnable)
     }
 
     companion object {
@@ -234,5 +282,6 @@ class OperaVpnService : VpnService() {
         const val MTU = 1500
         const val NOTIFICATION_ID = 1
         const val CHANNEL_ID = "opera_vpn"
+        const val NOTIFICATION_REFRESH_MS = 1_000L
     }
 }

@@ -49,6 +49,25 @@ class TrafficStatsTest {
     }
 
     @Test
+    fun `rate sample is shared by multiple consumers`() {
+        setUpClock()
+        TrafficStats.onDownload(1024)
+        val first = TrafficStats.snapshot()
+        assertEquals(4096.0, first.downBps, 0.001)
+
+        // The UI and the notification read once a second; a second reader in
+        // the same window must reuse the rate, not consume a near-zero delta.
+        val second = TrafficStats.snapshot()
+        assertEquals(4096.0, second.downBps, 0.001)
+
+        now += 1_000_000_000L
+        TrafficStats.onDownload(2048)
+        val third = TrafficStats.snapshot()
+        assertEquals(3072L, third.downBytes)
+        assertEquals(2048.0, third.downBps, 0.001)
+    }
+
+    @Test
     fun `reset starts a fresh session`() {
         setUpClock()
         TrafficStats.onDownload(4096)

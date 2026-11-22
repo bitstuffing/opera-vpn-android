@@ -22,6 +22,7 @@
     <string name="dns_stats">DNS: %1$d bloqueados / %2$d permitidos</string>
     <string name="notification_channel">VPN</string>
     <string name="notification_title">Opera VPN</string>
+    <string name="notification_blocked">Dominios bloqueados: %1$d</string>
     <string name="permission_denied">Permiso de VPN denegado</string>
     <string name="hint">TCP y DNS van por el túnel de Opera; el resto de UDP sale por el relay local. Bloqueo de anuncios DNS y registro de consultas.</string>
 

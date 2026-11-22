@@ -9,9 +9,10 @@ import java.util.concurrent.atomic.AtomicLong
  * The engine reports every IP packet read from the TUN as upload and every
  * packet written back to the TUN as download, so the numbers include protocol
  * headers and local DNS replies, not just application payload. Speed is the
- * delta between two [snapshot] calls divided by the elapsed time; the UI asks
- * once a second. Sampling is idempotent enough for that single consumer, and
- * all counters are atomic because packets arrive on several threads.
+ * delta between [snapshot] samples at least [MIN_SAMPLE_NANOS] apart. Calls
+ * inside the same sample window reuse the cached rate, so the UI and the
+ * foreground notification can both read it without stealing each other's
+ * delta. All counters are atomic because packets arrive on several threads.
  */
 internal object TrafficStats {
 
@@ -33,7 +34,14 @@ internal object TrafficStats {
     /** Injectable for tests; declared before [sampledAt] so init can use it. */
     internal var clock: () -> Long = { System.nanoTime() }
 
-    private val sampledAt = AtomicLong(now())
+    private val sampledAt = AtomicLong(now() - MIN_SAMPLE_NANOS)
+
+    /** Rates from the last completed sample window, shared by all readers. */
+    @Volatile
+    private var cachedDownBps = 0.0
+
+    @Volatile
+    private var cachedUpBps = 0.0
 
     private fun now(): Long = clock()
 
@@ -46,21 +54,29 @@ internal object TrafficStats {
     }
 
     /** Totals since the last [reset], plus current bytes/second. */
-    fun snapshot(): Snapshot {
+    fun snapshot(): Snapshot = synchronized(this) {
         val time = now()
-        val previousTime = sampledAt.getAndSet(time)
+        val previousTime = sampledAt.get()
+        if (time - previousTime < MIN_SAMPLE_NANOS) {
+            // Another consumer (UI or notification) already sampled this
+            // window: return its rate instead of consuming a near-zero delta.
+            return@synchronized Snapshot(
+                downBytes = downTotal.get(),
+                upBytes = upTotal.get(),
+                downBps = cachedDownBps,
+                upBps = cachedUpBps
+            )
+        }
+
         val down = downTotal.get()
         val up = upTotal.get()
         val previousDown = sampledDown.getAndSet(down)
         val previousUp = sampledUp.getAndSet(up)
-        val elapsed = maxOf(time - previousTime, MIN_SAMPLE_NANOS).toDouble()
-        val scale = 1_000_000_000.0 / elapsed
-        return Snapshot(
-            downBytes = down,
-            upBytes = up,
-            downBps = (down - previousDown) * scale,
-            upBps = (up - previousUp) * scale
-        )
+        sampledAt.set(time)
+        val scale = 1_000_000_000.0 / (time - previousTime).toDouble()
+        cachedDownBps = (down - previousDown) * scale
+        cachedUpBps = (up - previousUp) * scale
+        Snapshot(down, up, cachedDownBps, cachedUpBps)
     }
 
     fun downTotal(): Long = downTotal.get()
@@ -69,11 +85,17 @@ internal object TrafficStats {
 
     /** Called when a new connection attempt starts. */
     fun reset() {
-        downTotal.set(0)
-        upTotal.set(0)
-        sampledDown.set(0)
-        sampledUp.set(0)
-        sampledAt.set(now())
+        synchronized(this) {
+            downTotal.set(0)
+            upTotal.set(0)
+            sampledDown.set(0)
+            sampledUp.set(0)
+            cachedDownBps = 0.0
+            cachedUpBps = 0.0
+            // Make the first sample eligible immediately, still clamped to
+            // 250 ms so a single packet cannot look like a huge burst.
+            sampledAt.set(now() - MIN_SAMPLE_NANOS)
+        }
     }
 
     fun formatBytes(bytes: Long): String = when {
