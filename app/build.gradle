@@ -1,0 +1,56 @@
+plugins {
+    alias(libs.plugins.android.application)
+}
+
+android {
+    namespace 'com.github.bitstuffing.operavpn'
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 1
+        }
+    }
+
+    defaultConfig {
+        applicationId "com.github.bitstuffing.operavpn"
+        minSdk 31
+        targetSdk 36
+        // CI can override these with -PappVersionCode / -PappVersionName when
+        // building a tag; local builds keep the defaults below.
+        versionCode(providers.gradleProperty('appVersionCode').orElse('1').get().toInteger())
+        versionName(providers.gradleProperty('appVersionName').orElse('1.0').get())
+    }
+
+    buildTypes {
+        release {
+            optimization {
+                enable false
+            }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+
+    testOptions {
+        unitTests {
+            returnDefaultValues = true
+            all {
+                useJUnitPlatform()
+            }
+        }
+    }
+}
+
+dependencies {
+    // Only the Opera provisioning code is reused from the old project.
+    // The app itself talks to Android's VpnService, not to the old HTTP fetchers.
+    implementation project(':opera-vpn')
+    implementation project(':udp-protocol')
+
+    testImplementation project(':udp-relay')
+    testImplementation 'org.json:json:20240303'
+    testImplementation libs.junit.jupiter
+    testRuntimeOnly libs.junit.platform.launcher
+}

@@ -1,0 +1,23 @@
+plugins {
+    id 'application'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
+}
+
+dependencies {
+    implementation project(':udp-protocol')
+
+    testImplementation libs.junit.jupiter
+    testRuntimeOnly libs.junit.platform.launcher
+}
+
+application {
+    mainClass = 'com.github.bitstuffing.operavpn.relay.UdpRelayServer'
+}
+
+test {
+    useJUnitPlatform()
+}

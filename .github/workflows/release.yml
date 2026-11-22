@@ -1,0 +1,112 @@
+name: Release
+
+# Tag v1.2.3 (or run manually for an existing tag) to build fresh APKs and
+# publish them as a GitHub Release. Nothing is sent to Google Play.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to release, e.g. v1.2.3
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    name: Resolve version from tag
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      version_name: ${{ steps.meta.outputs.version_name }}
+      version_code: ${{ steps.meta.outputs.version_code }}
+    steps:
+      - name: Derive versionName / versionCode
+        id: meta
+        shell: bash
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          tag="${INPUT_TAG:-$REF_NAME}"
+          version="${tag#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Expected a semantic tag like v1.2.3, got '$tag'" >&2
+            exit 1
+          fi
+          IFS='.' read -r major minor patch _ <<< "$version"
+          patch="${patch%%[!0-9]*}"
+          code=$(( 10#$major * 10000 + 10#$minor * 100 + 10#$patch ))
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version_name=$version" >> "$GITHUB_OUTPUT"
+          echo "version_code=$code" >> "$GITHUB_OUTPUT"
+          echo "Release $tag -> versionName=$version versionCode=$code"
+
+  build:
+    name: Build release artifacts
+    needs: version
+    uses: ./.github/workflows/build-apks.yml
+    with:
+      version_name: ${{ needs.version.outputs.version_name }}
+      version_code: ${{ needs.version.outputs.version_code }}
+
+  publish:
+    name: Publish GitHub Release
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Download APK artifact
+        uses: actions/download-artifact@v6
+        with:
+          name: apks
+          path: release-assets
+
+      - name: Verify artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s release-assets/app-debug.apk
+          test -s release-assets/app-release-unsigned.apk
+          (cd release-assets && sha256sum -c checksums.txt)
+          ls -lh release-assets
+
+      - name: Create or update GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.version.outputs.tag }}
+          name: ${{ needs.version.outputs.tag }}
+          generate_release_notes: true
+          prerelease: ${{ contains(needs.version.outputs.version_name, '-') }}
+          body: |
+            Android VPN client for Opera's private tunnel. Requires Android 12+ (API 31).
+            Regions: **AM**, **EU**, **AS**.
+
+            | Asset | What it is |
+            | --- | --- |
+            | `app-debug.apk` | Installable build, signed with Android's generated debug key. |
+            | `app-release-unsigned.apk` | Optimised release build **without a signature**; sign it with `apksigner` before installing. |
+            | `checksums.txt` | SHA-256 hashes — verify with `sha256sum -c checksums.txt`. |
+
+            See `README.md` for architecture, DNS lists, diagnostics and known limitations.
+          files: |
+            release-assets/app-debug.apk
+            release-assets/app-release-unsigned.apk
+            release-assets/checksums.txt
+          fail_on_unmatched_files: true

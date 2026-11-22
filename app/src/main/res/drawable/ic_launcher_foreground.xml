@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Glowing Cyan Outer Shield Aura -->
+    <path
+        android:fillColor="#00E5FF"
+        android:fillAlpha="0.15"
+        android:pathData="M54,23 L79,32 C79,54 68,70 54,79 C40,70 29,54 29,32 Z" />
+
+    <!-- Main Shield Body (Electric Blue/Cyan Gradient Feel) -->
+    <path
+        android:fillColor="#0284C7"
+        android:pathData="M54,26 L76,34 C76,53 66,67 54,75 C42,67 32,53 32,34 Z" />
+
+    <!-- Inner Shield Right Shade (3D Depth) -->
+    <path
+        android:fillColor="#0369A1"
+        android:pathData="M54,26 L76,34 C76,53 66,67 54,75 Z" />
+
+    <!-- Bright Neon Cyan Shield Rim Accent -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#38BDF8"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M54,26 L76,34 C76,53 66,67 54,75 C42,67 32,53 32,34 Z" />
+
+    <!-- Lock Shackle (Upper Loop) -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:pathData="M48,46 V42 C48,38.7 50.7,36 54,36 C57.3,36 60,38.7 60,42 V46" />
+
+    <!-- Lock Body (Secure Box) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M45,46 H63 C64.7,46 66,47.3 66,49 V60 C66,61.7 64.7,63 63,63 H45 C43.3,63 42,61.7 42,60 V49 C42,47.3 43.3,46 45,46 Z" />
+
+    <!-- Keyhole Circle & Slot -->
+    <path
+        android:fillColor="#0284C7"
+        android:pathData="M54,51 A2.5,2.5 0 1,0 54,56 V59 H54 Z" />
+
+    <!-- Open Connection Nodes / Shield Waves (Bottom Accent) -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#38BDF8"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:pathData="M40,68 C44,72 64,72 68,68" />
+
+</vector>

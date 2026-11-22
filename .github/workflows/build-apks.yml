@@ -1,0 +1,61 @@
+name: Build APKs (reusable)
+
+# Called by build.yml (push / PR / manual) and release.yml (tags / manual).
+# Uploads one "apks" artifact containing both APKs and their SHA-256 checksums.
+on:
+  workflow_call:
+    inputs:
+      version_name:
+        description: Version name embedded in the APKs (e.g. 1.2.3)
+        type: string
+        required: false
+        default: '1.0'
+      version_code:
+        description: Numeric version code embedded in the APKs
+        type: string
+        required: false
+        default: '1'
+
+permissions:
+  contents: read
+
+jobs:
+  assemble:
+    name: Assemble debug and release APKs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@v6
+
+      - name: Set up build environment
+        uses: ./.github/actions/setup-android-build
+
+      - name: Assemble APKs
+        env:
+          APP_VERSION_NAME: ${{ inputs.version_name }}
+          APP_VERSION_CODE: ${{ inputs.version_code }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew :app:assembleDebug :app:assembleRelease \
+            -PappVersionName="$APP_VERSION_NAME" \
+            -PappVersionCode="$APP_VERSION_CODE" \
+            --console=plain --no-configuration-cache
+
+      - name: Collect artifacts and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          cp app/build/outputs/apk/debug/app-debug.apk artifacts/
+          cp app/build/outputs/apk/release/app-release-unsigned.apk artifacts/
+          (cd artifacts && sha256sum *.apk > checksums.txt)
+          cat artifacts/checksums.txt
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: apks
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 14

@@ -1,0 +1,96 @@
+name: Tests
+
+# Test reports are uploaded even when a job fails, so a failed run is debuggable
+# without reproducing it locally.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  app-unit-tests:
+    name: App unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@v6
+
+      - name: Set up build environment
+        uses: ./.github/actions/setup-android-build
+
+      - name: Run app unit tests
+        run: ./gradlew :app:testDebugUnitTest --console=plain --no-configuration-cache
+
+      - name: Upload app test reports
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: test-report-app
+          path: |
+            app/build/test-results/testDebugUnitTest/**
+            app/build/reports/tests/testDebugUnitTest/**
+          if-no-files-found: warn
+          retention-days: 14
+
+  library-unit-tests:
+    name: Library unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@v6
+
+      - name: Set up build environment
+        uses: ./.github/actions/setup-android-build
+
+      # OperaSeClientTest (live Opera API) is excluded by default by the
+      # legacy module's build.gradle; use -PliveOperaTests to opt in.
+      - name: Run library unit tests
+        run: >-
+          ./gradlew :opera-vpn:testDebugUnitTest :udp-protocol:test :udp-relay:test
+          --console=plain --no-configuration-cache
+
+      - name: Upload library test reports
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: test-report-libraries
+          path: |
+            opera-vpn/build/test-results/testDebugUnitTest/**
+            opera-vpn/build/reports/tests/testDebugUnitTest/**
+            udp-protocol/build/test-results/test/**
+            udp-protocol/build/reports/tests/test/**
+            udp-relay/build/test-results/test/**
+            udp-relay/build/reports/tests/test/**
+          if-no-files-found: warn
+          retention-days: 14
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@v6
+
+      - name: Set up build environment
+        uses: ./.github/actions/setup-android-build
+
+      - name: Run Android lint
+        run: ./gradlew :app:lint :opera-vpn:lint --console=plain --no-configuration-cache
+
+      - name: Upload lint reports
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: lint-report
+          path: |
+            app/build/reports/lint-results-*.html
+            opera-vpn/build/reports/lint-results-*.html
+          if-no-files-found: warn
+          retention-days: 14

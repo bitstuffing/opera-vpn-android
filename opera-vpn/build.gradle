@@ -1,0 +1,54 @@
+plugins {
+    alias(libs.plugins.android.library)
+}
+
+android {
+    namespace 'com.github.bitstuffing.operavpn.legacy'
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 1
+        }
+    }
+
+    defaultConfig {
+        minSdk 31
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+
+    testOptions {
+        unitTests {
+            returnDefaultValues = true
+            all {
+                useJUnitPlatform()
+            }
+        }
+    }
+}
+
+dependencies {
+    // The original implementation is kept intact: it provisions Opera
+    // credentials and can also fetch HTTP through the Opera tunnel.
+    implementation("com.squareup.okhttp3:okhttp:4.12.0") {
+        // okio-jvm is the artifact available in this environment.
+        exclude([group: 'com.squareup.okio', module: 'okio'])
+    }
+    implementation("com.squareup.okio:okio-jvm:3.9.0")
+
+    testImplementation libs.junit.jupiter
+    testRuntimeOnly libs.junit.platform.launcher
+    testImplementation 'org.json:json:20240303'
+}
+
+// OperaSeClientTest talks to the real Opera API. It is a useful live probe but
+// makes `./gradlew build` depend on network availability, so keep it opt-in:
+//   ./gradlew :opera-vpn:testDebugUnitTest -PliveOperaTests
+tasks.withType(Test).configureEach {
+    if (!project.hasProperty('liveOperaTests')) {
+        exclude '**/OperaSeClientTest*'
+        failOnNoDiscoveredTests = false
+    }
+}
